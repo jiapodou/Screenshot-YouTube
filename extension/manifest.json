@@ -11,7 +11,7 @@
     },
 
     "options_page": "options.html",
-    
+
     "content_scripts": [
         {
             "matches": ["https://www.youtube.com/*"],
@@ -22,6 +22,23 @@
     ],
 
     "permissions": [
-        "storage"
+        "storage",
+        "sidePanel",
+        "downloads"
+    ],
+
+    "background": {
+        "service_worker": "background.js"
+    },
+
+    "web_accessible_resources": [
+        {
+            "resources": ["icons/camera.png"],
+            "matches": ["<all_urls>"]
+        }
+    ],
+
+    "host_permissions": [
+        "https://www.youtube.com/*"
     ]
 }

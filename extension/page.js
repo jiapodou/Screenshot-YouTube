@@ -1,273 +1,199 @@
 'use strict';
 
-var activePBRButton;
-var screenshotKey = false;
-var playbackSpeedButtons = false;
-var screenshotFunctionality = 0;
-var screenshotFormat = "png";
-var extension = 'png';
-var isAppended = false;
+const APPNAME = "MySparks";
+const screenshotKey = true;
+const screenshotFunctionality = 0;
+const screenshotFormat = "png";
+const extension = "png";
+let isUIAdded = false;
+let resetButtonTimeout;
 
+// Function to capture a screenshot and save metadata
 function CaptureScreenshot() {
+	const player = document.getElementsByClassName("video-stream")[0];
+	// player.pause();
 
-	var appendixTitle = "screenshot." + extension;
+	let title = GetVideoTitle();
+	let videoID = new URL(window.location.href).searchParams.get("v") || "unknownID";
+	let safeTitle = title.replace(/[^a-zA-Z0-9-_ ]/g, "").replace(/\s+/g, "_");
 
-	var title;
-
-	var headerEls = document.querySelectorAll("h1.title.ytd-video-primary-info-renderer");
-
-	function SetTitle() {
-		if (headerEls.length > 0) {
-			title = headerEls[0].innerText.trim();
-			return true;
-		} else {
-			return false;
-		}
-	}
-	
-	if (SetTitle() == false) {
-		headerEls = document.querySelectorAll("h1.watch-title-container");
-
-		if (SetTitle() == false)
-			title = '';
-	}
-
-	var player = document.getElementsByClassName("video-stream")[0];
-
-	var time = player.currentTime;
-
-	title += " ";
-
-	let minutes = Math.floor(time / 60)
-
+	let time = player.currentTime;
+	let minutes = Math.floor(time / 60);
 	time = Math.floor(time - (minutes * 60));
+	let timestamp = `${minutes}:${time}`;
 
-	if (minutes > 60) {
-		let hours = Math.floor(minutes / 60)
-		minutes -= hours * 60;
-		title += hours + "-";
-	}
+	const videoFolder = `${APPNAME}/Video_Screenshots/${safeTitle}_${videoID}/`;
+	const screenshotFolder = `${videoFolder}images/`;
+	const filename = `screenshot_${minutes}-${time}.${extension}`;
+	const jsonPath = `${videoFolder}notes.json`;
 
-	title += minutes + "-" + time;
-
-	title += " " + appendixTitle;
-
-	var canvas = document.createElement("canvas");
+	const canvas = document.createElement("canvas");
 	canvas.width = player.videoWidth;
 	canvas.height = player.videoHeight;
-	canvas.getContext('2d').drawImage(player, 0, 0, canvas.width, canvas.height);
-
-	var downloadLink = document.createElement("a");
-	downloadLink.download = title;
+	canvas.getContext("2d").drawImage(player, 0, 0, canvas.width, canvas.height);
 
 	function DownloadBlob(blob) {
-		downloadLink.href = URL.createObjectURL(blob);
-		downloadLink.click();
+		let blobURL = URL.createObjectURL(blob);
+
+		chrome.runtime.sendMessage({
+			action: "download",
+			url: blobURL,
+			filename: screenshotFolder + filename
+		}, function (response) {
+			console.log("Screenshot download response:", response);
+		});
+
+		// Check if JSON exists, then modify or create
+		CheckAndModifyJSON(
+			jsonPath,
+			{
+				timestamp: timestamp,
+				filename: filename,
+				note: ""
+			},
+			title,
+			videoID);
 	}
 
-	async function ClipboardBlob(blob) {
-		const clipboardItemInput = new ClipboardItem({ "image/png": blob });
-		await navigator.clipboard.write([clipboardItemInput]);
-	}
-
-	// If clipboard copy is needed generate png (clipboard only supports png)
-	if (screenshotFunctionality == 1 || screenshotFunctionality == 2) {
-		canvas.toBlob(async function (blob) {
-			await ClipboardBlob(blob);
-			// Also download it if it's needed and it's in the correct format
-			if (screenshotFunctionality == 2 && screenshotFormat === 'png') {
-				DownloadBlob(blob);
-			}
-		}, 'image/png');
-	}
-
-	// Create and download image in the selected format if needed
-	if (screenshotFunctionality == 0 || (screenshotFunctionality == 2 && screenshotFormat !== 'png')) {
-		canvas.toBlob(async function (blob) {
-			DownloadBlob(blob);
-		}, 'image/' + screenshotFormat);
-	}
+	canvas.toBlob(blob => DownloadBlob(blob), "image/" + screenshotFormat);
+	ShowAddNoteButton(jsonPath, timestamp, filename, videoFolder);
 }
 
-function AddScreenshotButton() {
-	var ytpRightControls = document.getElementsByClassName("ytp-right-controls")[0];
-	if (!ytpRightControls) {
-		isAppended = false;
-		return;
-	}
+// Function to check if JSON exists, modify it or create a new one
+function CheckAndModifyJSON(jsonPath, newEntry, videoTitle, videoID) {
+	chrome.runtime.sendMessage({ action: "check_json", filePath: jsonPath }, function (response) {
+		if (response.exists) {
+			console.log(`JSON file found, modifying ${jsonPath}`);
+			chrome.runtime.sendMessage({
+				action: "edit_json",
+				filePath: jsonPath,
+				newEntry: newEntry
+			});
+		} else {
+			console.log(`JSON file not found, creating new one at ${jsonPath}`);
+			let newJsonData = {
+				video_title: videoTitle,
+				video_id: videoID,
+				screenshots: [newEntry]
+			};
 
-	ytpRightControls.prepend(screenshotButton);
-	isAppended = true;
-
-	chrome.storage.sync.get('playbackSpeedButtons', function(result) {
-		if (result.playbackSpeedButtons) {
-			ytpRightControls.prepend(speed3xButton);
-			ytpRightControls.prepend(speed25xButton);
-			ytpRightControls.prepend(speed2xButton);
-			ytpRightControls.prepend(speed15xButton);
-			ytpRightControls.prepend(speed1xButton);
-
-			var playbackRate = document.getElementsByTagName('video')[0].playbackRate;
-			switch (playbackRate) {
-				case 1:
-					speed1xButton.classList.add('SYTactive');
-					activePBRButton = speed1xButton;
-					break;
-				case 2:
-					speed2xButton.classList.add('SYTactive');
-					activePBRButton = speed2xButton;
-					break;
-				case 2.5:
-					speed25xButton.classList.add('SYTactive');
-					activePBRButton = speed25xButton;
-					break;
-				case 3:
-					speed3xButton.classList.add('SYTactive');
-					activePBRButton = speed3xButton;
-					break;
-			}
+			chrome.runtime.sendMessage({
+				action: "save_json",
+				filePath: jsonPath,
+				jsonData: newJsonData
+			});
 		}
 	});
 }
 
-var screenshotButton = document.createElement("button");
-screenshotButton.className = "screenshotButton ytp-button";
-screenshotButton.style.width = "auto";
-screenshotButton.innerHTML = "Screenshot";
-screenshotButton.style.cssFloat = "left";
-screenshotButton.onclick = CaptureScreenshot;
+// Function to show "✔ Add Note" button
+function ShowAddNoteButton(jsonPath, timestamp, filename, folderPath) {
+	var screenshotButton = document.getElementById("screenshotButtonUI");
+	screenshotButton.innerHTML = "Add Note";
+	screenshotButton.style.width = "120px";
 
-var speed1xButton = document.createElement("button");
-speed1xButton.className = "ytp-button SYText";
-speed1xButton.innerHTML = "1×";
-speed1xButton.onclick = function() {
-	document.getElementsByTagName('video')[0].playbackRate = 1;
-	activePBRButton.classList.remove('SYTactive');
-	this.classList.add('SYTactive');
-	activePBRButton = this;
-};
+	screenshotButton.onclick = function () {
+		ShowTextBox(jsonPath, timestamp, filename, folderPath);
+	};
 
-var speed15xButton = document.createElement("button");
-speed15xButton.className = "ytp-button SYText";
-speed15xButton.innerHTML = "1.5×";
-speed15xButton.onclick = function() {
-	document.getElementsByTagName('video')[0].playbackRate = 1.5;
-	activePBRButton.classList.remove('SYTactive');
-	this.classList.add('SYTactive');
-	activePBRButton = this;
-};
-
-var speed2xButton = document.createElement("button");
-speed2xButton.className = "ytp-button SYText";
-speed2xButton.innerHTML = "2×";
-speed2xButton.onclick = function() {
-	document.getElementsByTagName('video')[0].playbackRate = 2;
-	activePBRButton.classList.remove('SYTactive');
-	this.classList.add('SYTactive');
-	activePBRButton = this;
-};
-
-var speed25xButton = document.createElement("button");
-speed25xButton.className = "ytp-button SYText";
-speed25xButton.innerHTML = "2.5×";
-speed25xButton.onclick = function() {
-	document.getElementsByTagName('video')[0].playbackRate = 2.5;
-	activePBRButton.classList.remove('SYTactive');
-	this.classList.add('SYTactive');
-	activePBRButton = this;
-};
-
-var speed3xButton = document.createElement("button");
-speed3xButton.className = "ytp-button SYText";
-speed3xButton.innerHTML = "3×";
-speed3xButton.onclick = function() {
-	document.getElementsByTagName('video')[0].playbackRate = 3;
-	activePBRButton.classList.remove('SYTactive');
-	this.classList.add('SYTactive');
-	activePBRButton = this;
-};
-
-activePBRButton = speed1xButton;
-
-chrome.storage.sync.get(['screenshotKey', 'playbackSpeedButtons', 'screenshotFunctionality', 'screenshotFileFormat'], function(result) {
-	screenshotKey = result.screenshotKey;
-	playbackSpeedButtons = result.playbackSpeedButtons;
-	if (result.screenshotFileFormat === undefined) {
-		screenshotFormat = 'png'
-	} else {
-		screenshotFormat = result.screenshotFileFormat
-	}
-
-	if (result.screenshotFunctionality === undefined) {
-		screenshotFunctionality = 0;
-	} else {
-		screenshotFunctionality = result.screenshotFunctionality;
-	}
-
-	if (screenshotFormat === 'jpeg') {
-		extension = 'jpg';
-	} else {
-		extension = screenshotFormat;
-	}
-});
-
-document.addEventListener('keydown', function(e) {
-	if (document.activeElement.contentEditable === 'true' || document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA' || document.activeElement.contentEditable === 'plaintext')
-		return true;
-
-	if (playbackSpeedButtons) {
-		switch (e.key) {
-			case 'q':
-				speed1xButton.click();
-				e.preventDefault();
-				return false;
-			case 's':
-				speed15xButton.click();
-				e.preventDefault();
-				return false;
-			case 'w':
-				speed2xButton.click();
-				e.preventDefault();
-				return false;
-			case 'e':
-				speed25xButton.click();
-				e.preventDefault();
-				return false;
-			case 'r':
-				speed3xButton.click();
-				e.preventDefault();
-				return false;
-		}
-	}
-
-	if (screenshotKey && e.key === 'p') {
-		CaptureScreenshot();
-		e.preventDefault();
-		return false;
-	}
-});
-
-AddScreenshotButton();
-
-function onDomChange(mutationsList, observer) {
-	let run = false;
-	for (let mutation of mutationsList) {
-		if (mutation.type === 'childList') {
-			run = true;
-		}
-	}
-
-	if (run) {
-		let ytpRightControls = document.getElementsByClassName("ytp-right-controls")[0];
-		if (ytpRightControls && isAppended === false) {
-			AddScreenshotButton();
-		}
-	}
+	clearTimeout(resetButtonTimeout);
+	resetButtonTimeout = setTimeout(() => {
+		ResetToCameraButton();
+	}, 2000);
 }
 
-const observer = new MutationObserver(onDomChange);
+// Function to show text box for adding notes
+function ShowTextBox(jsonPath, timestamp, filename, folderPath) {
+	clearTimeout(resetButtonTimeout);
 
-observer.observe(document.body, {
-	childList: true,
-	subtree: true
+	var screenshotButton = document.getElementById("screenshotButtonUI");
+	screenshotButton.innerHTML = "";
+
+	var textBox = document.createElement("textarea");
+	textBox.id = "noteInputBox";
+	textBox.placeholder = "Enter your note...";
+	textBox.style.width = "400px";
+	textBox.style.height = "80px";
+	textBox.style.padding = "5px";
+	textBox.style.borderRadius = "5px";
+
+	var saveButton = document.createElement("button");
+	saveButton.innerText = "Save";
+	saveButton.style.marginLeft = "5px";
+	saveButton.onclick = function () {
+		SaveNoteToJSON(jsonPath, timestamp, filename, folderPath, textBox.value);
+		ResetToCameraButton();
+	};
+
+	screenshotButton.appendChild(textBox);
+	screenshotButton.appendChild(saveButton);
+}
+
+// Function to save the note in JSON
+function SaveNoteToJSON(jsonPath, timestamp, filename, folderPath, note) {
+	chrome.runtime.sendMessage({
+		action: "edit_json",
+		filePath: jsonPath,
+		updateNote: { timestamp, filename, note }
+	});
+}
+
+// Function to reset the button to the camera icon
+function ResetToCameraButton() {
+	var screenshotButton = document.getElementById("screenshotButtonUI");
+	screenshotButton.innerHTML = "📷";
+	screenshotButton.style.width = "50px";
+	screenshotButton.onclick = CaptureScreenshot;
+}
+
+// Function to add floating UI
+function AddFloatingUI() {
+	if (isUIAdded) return;
+	isUIAdded = true;
+
+	var playerContainer = document.querySelector(".html5-video-player");
+	if (!playerContainer) return;
+
+	var screenshotButton = document.createElement("div");
+	screenshotButton.id = "screenshotButtonUI";
+	screenshotButton.style.position = "absolute";
+	screenshotButton.style.bottom = "60px";
+	screenshotButton.style.left = "60px";
+	screenshotButton.style.width = "50px";
+	screenshotButton.style.height = "50px";
+	screenshotButton.style.backgroundColor = "rgba(0, 0, 0, 0.3)";
+	screenshotButton.style.borderRadius = "8px";
+	screenshotButton.style.cursor = "pointer";
+	screenshotButton.style.display = "flex";
+	screenshotButton.style.alignItems = "center";
+	screenshotButton.style.justifyContent = "center";
+	screenshotButton.style.zIndex = "9999";
+
+	// PNG Image as Background with 50% size and 80% opacity
+	screenshotButton.style.backgroundImage = "url('" + chrome.runtime.getURL("icons/camera.png") + "')";
+	screenshotButton.style.backgroundSize = "50%"; // Set to 50% size
+	screenshotButton.style.backgroundRepeat = "no-repeat";
+	screenshotButton.style.backgroundPosition = "center";
+	screenshotButton.style.opacity = "0.8"; // Set transparency to 0.8
+
+	screenshotButton.onclick = CaptureScreenshot;
+
+	playerContainer.appendChild(screenshotButton);
+}
+
+// Function to get video title
+function GetVideoTitle() {
+	let headerEls = document.querySelectorAll("h1.title.ytd-video-primary-info-renderer");
+	return headerEls.length > 0 ? headerEls[0].innerText.trim() : "Untitled";
+}
+
+// Add event listener for 'x' key to trigger screenshot
+document.addEventListener("keydown", function (e) {
+	if (document.activeElement.tagName !== "INPUT" && document.activeElement.tagName !== "TEXTAREA" && screenshotKey && e.key === "x") {
+		CaptureScreenshot();
+		e.preventDefault();
+	}
 });
+
+// Add floating UI when the page loads
+setTimeout(AddFloatingUI, 1000);
