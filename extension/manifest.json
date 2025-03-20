@@ -24,7 +24,9 @@
     "permissions": [
         "storage",
         "sidePanel",
-        "downloads"
+        "downloads",
+        "unlimitedStorage",
+        "sidePanel"
     ],
 
     "background": {
@@ -40,5 +42,12 @@
 
     "host_permissions": [
         "https://www.youtube.com/*"
-    ]
+    ],
+
+    "side_panel": {
+        "default_path": "sidepanel.html"
+    },
+    "action": {
+        "default_title": "Open Side Panel"
+    }
 }
